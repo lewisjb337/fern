@@ -1,0 +1,135 @@
+:root {
+  /* Backgrounds */
+  --bg-app: #FFFFFF;
+  --bg-sidebar: #FBFBFA;
+  --bg-hover: #F1F1EF;
+  --bg-selected: #E9E9E7;
+  --bg-code: #F7F6F3;
+  --bg-surface: #FFFFFF;
+
+  /* Text */
+  --text-primary: #37352F;
+  --text-secondary: #6B6B6B;
+  --text-muted: #9B9A97;
+  --text-disabled: #C4C3C0;
+
+  /* Accent — deep forest green, matches app icon */
+  --accent: #1A5C43;
+  --accent-hover: #144D38;
+  --accent-bg: #E8F0EC;
+  --accent-light: #2F7C5F;
+
+  /* Functional status colours */
+  --color-red: #E03E3E;
+  --color-red-bg: #FBE4E4;
+  --color-amber: #D9730D;
+  --color-amber-bg: #FAEBDD;
+  --color-blue: #337EA9;
+  --color-blue-bg: #E7F3F8;
+
+  /* Borders */
+  --border: #E9E9E7;
+  --border-strong: #D3D1CB;
+
+  /* Syntax — light theme */
+  --syntax-comment: #9B9A97;
+  --syntax-string: #2F7C5F;
+  --syntax-keyword: #AF4C9A;
+  --syntax-function: #337EA9;
+  --syntax-number: #D9730D;
+  --syntax-flag: #337EA9;
+
+  /* Diff colors */
+  --diff-added-bg: #EAF3DE;
+  --diff-added-text: #2D5740;
+  --diff-removed-bg: #FDECEA;
+  --diff-removed-text: #A6342B;
+
+  /* Mermaid diagram */
+  --mermaid-bg: #F7F6F3;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Inter', sans-serif;
+  --font-serif: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Inter', sans-serif;
+  --font-mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', Menlo, Courier, monospace;
+
+  /* Custom titlebar (Windows frameless) — always dark regardless of app theme */
+  --titlebar-bg: #1C1C1E;
+  --titlebar-border: rgba(0, 0, 0, 0.25);
+  --titlebar-text: rgba(255, 255, 255, 0.82);
+  --titlebar-btn-hover: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] {
+  --bg-app: #191919;
+  --bg-sidebar: #202020;
+  --bg-hover: #2A2A2A;
+  --bg-selected: #333333;
+  --bg-code: #2F3437;
+  --bg-surface: #202020;
+  --text-primary: #E9E9E7;
+  --text-secondary: #9B9A97;
+  --text-muted: #6F6E69;
+  --text-disabled: #4A4A48;
+  --border: #2A2A2A;
+  --border-strong: #3D3D3D;
+  --accent: #1A5C43;
+  --accent-hover: #144D38;
+  --accent-bg: #192820;
+  --accent-light: #2F7C5F;
+  --color-red: #E03E3E;
+  --color-red-bg: #3A1A1A;
+  --color-amber: #D9730D;
+  --color-amber-bg: #3A2A10;
+  --color-blue: #337EA9;
+  --color-blue-bg: #1A2A3A;
+  --syntax-comment: #6B6B6B;
+  --syntax-string: #4DAB8C;
+  --syntax-keyword: #C084FC;
+  --syntax-function: #60A5FA;
+  --syntax-number: #F59E0B;
+  --syntax-flag: #60A5FA;
+  --mermaid-bg: #2F3437;
+  --diff-added-bg: #1A2E1A;
+  --diff-added-text: #7EC897;
+  --diff-removed-bg: #2E1A1A;
+  --diff-removed-text: #E07070;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg-app: #191919;
+    --bg-sidebar: #202020;
+    --bg-hover: #2A2A2A;
+    --bg-selected: #333333;
+    --bg-code: #2F3437;
+    --bg-surface: #202020;
+    --text-primary: #E9E9E7;
+    --text-secondary: #9B9A97;
+    --text-muted: #6F6E69;
+    --text-disabled: #4A4A48;
+    --border: #2A2A2A;
+    --border-strong: #3D3D3D;
+    --accent: #1A5C43;
+    --accent-hover: #144D38;
+    --accent-bg: #192820;
+    --accent-light: #2F7C5F;
+    --color-red: #E03E3E;
+    --color-red-bg: #3A1A1A;
+    --color-amber: #D9730D;
+    --color-amber-bg: #3A2A10;
+    --color-blue: #337EA9;
+    --color-blue-bg: #1A2A3A;
+    --syntax-comment: #6B6B6B;
+    --syntax-string: #4DAB8C;
+    --syntax-keyword: #C084FC;
+    --syntax-function: #60A5FA;
+    --syntax-number: #F59E0B;
+    --syntax-flag: #60A5FA;
+    --mermaid-bg: #2F3437;
+    --diff-added-bg: #1A2E1A;
+    --diff-added-text: #7EC897;
+    --diff-removed-bg: #2E1A1A;
+    --diff-removed-text: #E07070;
+  }
+}

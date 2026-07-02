@@ -1,0 +1,92 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: var(--font-sans);
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ── CodeMirror in-editor search panel ── */
+.cm-search {
+  background: var(--bg-sidebar) !important;
+  border-top: 1px solid var(--border) !important;
+  padding: 6px 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 13px !important;
+}
+.cm-search input {
+  background: var(--bg-app) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 5px !important;
+  padding: 3px 8px !important;
+  font-size: 13px !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-sans) !important;
+  outline: none !important;
+  min-width: 180px !important;
+}
+.cm-search input:focus { border-color: var(--accent) !important; }
+.cm-search button {
+  background: transparent !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 5px !important;
+  padding: 3px 8px !important;
+  font-size: 12px !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer !important;
+}
+.cm-search button:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
+.cm-search label { font-size: 12px !important; color: var(--text-secondary) !important; display: flex !important; align-items: center !important; gap: 4px !important; cursor: pointer !important; }
+.cm-selectionMatch { background: rgba(26, 92, 67, 0.15) !important; }
+.cm-searchMatch { background: rgba(26, 92, 67, 0.2) !important; border-radius: 2px !important; }
+.cm-searchMatch.cm-searchMatch-selected { background: rgba(26, 92, 67, 0.5) !important; }
