@@ -126,6 +126,7 @@ export function Sidebar({
   }, [folderPath])
 
   useEffect(() => {
+    renameSubmitted.current = false
     if (!renamingFile) return
     // Expand every ancestor folder so the rename input is rendered
     const sep = renamingFile.includes('\\') ? '\\' : '/'
@@ -185,9 +186,13 @@ export function Sidebar({
     setContextMenu({ path: node.path, type: node.type, x: rect.right + 4, y: rect.top })
   }
 
+  const renameSubmitted = useRef(false)
+
   function handleRenameSubmit(oldPath: string) {
+    if (renameSubmitted.current) return
     let name = renameValue.trim()
     if (!name) return
+    renameSubmitted.current = true
     const isFile = oldPath.endsWith('.md')
     if (isFile && !name.endsWith('.md')) name = `${name}.md`
     onRenameFile(oldPath, name)
@@ -195,7 +200,7 @@ export function Sidebar({
 
   function handleRenameKeyDown(e: React.KeyboardEvent, oldPath: string) {
     if (e.key === 'Enter') { e.preventDefault(); handleRenameSubmit(oldPath) }
-    if (e.key === 'Escape') { onRenameFile(oldPath, oldPath.split(/[\\/]/).pop() ?? '') }
+    if (e.key === 'Escape') { renameSubmitted.current = true; onRenameFile(oldPath, oldPath.split(/[\\/]/).pop() ?? '') }
   }
 
   const handleDragStart = useCallback((e: React.DragEvent, node: FileNode) => {

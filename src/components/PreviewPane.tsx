@@ -28,7 +28,7 @@ import { IssuesEmbed } from './IssuesEmbed'
 import { EnvEmbed } from './EnvEmbed'
 import { ErrorBoundary } from './ErrorBoundary'
 import { parseAllBlocks, type CodeBlock as CodeBlockData } from '../utils/parseBlocks'
-import { useExecutor } from '../hooks/useExecutor'
+import type { BlockState } from '../hooks/useExecutor'
 import type { PinnedOutput } from '../hooks/usePinnedOutputs'
 
 interface PreviewPaneProps {
@@ -42,6 +42,10 @@ interface PreviewPaneProps {
   onPin?: (blockKey: string, output: string) => void
   onUnpin?: (blockKey: string) => void
   embedCacheDuration?: number
+  blockStates: Record<string, BlockState>
+  runBlock: (blockId: string, code: string, runtime: string, namedId?: string | null) => Promise<{ exitCode: number | null }>
+  stopBlock: (blockId: string) => Promise<void>
+  clearBlock: (blockId: string) => void
 }
 
 // Shortcode pattern — matches {{file:…}}, {{csv:…}}, {{api:…}}, {{issues:…}}, {{env:…}}
@@ -141,8 +145,16 @@ export function PreviewPane({
   content, folderPath, onMakeRunnable, onBlockChange,
   runAllPausedAt, onResolveRunAll, getPinned, onPin, onUnpin,
   embedCacheDuration = 30,
+  blockStates, runBlock, stopBlock, clearBlock,
 }: PreviewPaneProps) {
-  const { blockStates, runBlock, stopBlock, clearBlock } = useExecutor(folderPath)
+
+  // Debounce content so expensive re-parses (parseAllBlocks + marked) don't
+  // fire on every keystroke in split view — 150ms is imperceptible to the eye.
+  const [debouncedContent, setDebouncedContent] = useState(content)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedContent(content), 150)
+    return () => clearTimeout(t)
+  }, [content])
 
   // API trust state for this workspace
   const previewRef = useRef<HTMLDivElement>(null)
@@ -210,7 +222,7 @@ export function PreviewPane({
   // Extract frontmatter tags
   const frontmatterTags = useMemo<string[]>(() => {
     try {
-      const lines = content.replace(/\r\n/g, '\n').split('\n')
+      const lines = debouncedContent.replace(/\r\n/g, '\n').split('\n')
       if (lines[0] !== '---') return []
       const closeIdx = lines.indexOf('---', 1)
       if (closeIdx < 1) return []
@@ -224,10 +236,10 @@ export function PreviewPane({
     } catch {
       return []
     }
-  }, [content])
+  }, [debouncedContent])
 
   const segments = useMemo<Segment[]>(() => {
-    const normalised = content.replace(/\r\n/g, '\n')
+    const normalised = debouncedContent.replace(/\r\n/g, '\n')
 
     // Strip frontmatter for PROSE rendering only
     let body = normalised
@@ -337,7 +349,7 @@ export function PreviewPane({
     }
 
     return result
-  }, [content])
+  }, [debouncedContent])
 
 
   const idleState = { status: 'idle' as const, output: [], exitCode: null, duration: null, pid: null }

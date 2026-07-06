@@ -10,6 +10,11 @@ import chokidar from 'chokidar'
 import { autoUpdater } from 'electron-updater'
 import log from 'electron-log'
 
+// Catch anything that escapes all other handlers so the main process never
+// silently dies mid-session.
+process.on('uncaughtException', (err) => log.error('[uncaughtException]', err))
+process.on('unhandledRejection', (reason) => log.error('[unhandledRejection]', reason))
+
 // node-pty is optional — may fail to compile without Visual C++ build tools
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let nodePty: any = null
@@ -88,11 +93,39 @@ let watchedFolder: string | null = null
 // show a false "changed externally" warning for our own autosaves.
 const selfWrittenPaths = new Set<string>()
 
+function normPath(filePath: string): string {
+  // Lowercase drive letter + forward-slash → backslash so Set lookups are
+  // case-insensitive on Windows (chokidar and Node can disagree on case).
+  return filePath.replace(/\//g, '\\').replace(/^[A-Z]:/, (d) => d.toLowerCase())
+}
+
 function markSelfWrite(filePath: string) {
-  const norm = filePath.replace(/\//g, '\\')
+  const norm = normPath(filePath)
   selfWrittenPaths.add(norm)
   // Clear after 2 seconds — well past chokidar's 300ms stabilityThreshold
   setTimeout(() => selfWrittenPaths.delete(norm), 2000)
+}
+
+// Returns true when p is safely inside base (no path traversal).
+function isUnderBase(p: string, base: string): boolean {
+  const rp = path.resolve(p)
+  const rb = path.resolve(base)
+  return rp === rb || rp.startsWith(rb + path.sep)
+}
+
+// Human-readable install hints keyed by executable name.
+const INSTALL_HINTS: Record<string, string> = {
+  node:    'Node.js is not installed — download it from https://nodejs.org',
+  python:  'Python is not installed — download it from https://python.org',
+  python3: 'Python 3 is not installed — download it from https://python.org',
+  ruby:    'Ruby is not installed — download it from https://ruby-lang.org',
+  go:      'Go is not installed — download it from https://go.dev',
+  rustc:   'Rust is not installed — install rustup from https://rustup.rs',
+  php:     'PHP is not installed — download it from https://php.net',
+  deno:    'Deno is not installed — download it from https://deno.land',
+  bun:     'Bun is not installed — download it from https://bun.sh',
+  perl:    'Perl is not installed',
+  pwsh:    'PowerShell Core (pwsh) is not installed — download it from https://github.com/PowerShell/PowerShell',
 }
 
 function startWatcher(folderPath: string, win: BrowserWindow) {
@@ -107,8 +140,9 @@ function startWatcher(folderPath: string, win: BrowserWindow) {
     ignorePermissionErrors: true,
     awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
   })
+  fileWatcher.on('error', (err) => log.error('[chokidar]', err))
   fileWatcher.on('change', (p) => {
-    const norm = p.replace(/\//g, '\\')
+    const norm = normPath(p)
     if (selfWrittenPaths.has(norm)) return   // our own write — ignore
     win.webContents.send('file-changed-externally', p)
   })
@@ -167,6 +201,12 @@ function createWindow() {
     },
   })
 
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.key === 'F12' && input.type === 'keyDown') {
+      mainWindow?.webContents.toggleDevTools()
+    }
+  })
+
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
     // mainWindow.webContents.openDevTools()
@@ -182,6 +222,7 @@ function createWindow() {
     })
   }
 
+  mainWindow.on('closed', () => { mainWindow = null })
   mainWindow.on('resize', saveBounds)
   mainWindow.on('move', saveBounds)
   mainWindow.on('maximize', () => mainWindow?.webContents.send('maximize-change', true))
@@ -402,28 +443,35 @@ ipcMain.handle('open-folder', async () => {
 })
 
 ipcMain.handle('read-file', (_event, filePath: string) => {
-  return fs.readFileSync(filePath, 'utf8')
+  try { return fs.readFileSync(filePath, 'utf8') }
+  catch (e) { throw new Error(`read-file failed: ${String(e)}`) }
 })
 
 ipcMain.handle('write-file', (_event, filePath: string, content: string) => {
-  markSelfWrite(filePath)
-  fs.writeFileSync(filePath, content, 'utf8')
+  try {
+    markSelfWrite(filePath)
+    fs.writeFileSync(filePath, content, 'utf8')
+  } catch (e) { throw new Error(`write-file failed: ${String(e)}`) }
 })
 
 ipcMain.handle('create-file', (_event, folderPath: string, fileName: string, content: string) => {
-  const filePath = path.join(folderPath, fileName)
-  fs.writeFileSync(filePath, content, 'utf8')
-  return filePath
+  try {
+    const filePath = path.join(folderPath, fileName)
+    fs.writeFileSync(filePath, content, 'utf8')
+    return filePath
+  } catch (e) { throw new Error(`create-file failed: ${String(e)}`) }
 })
 
 ipcMain.handle('list-files', (_event, folderPath: string) => buildFileTree(folderPath))
 
 ipcMain.handle('create-folder', (_event, folderPath: string) => {
-  fs.mkdirSync(folderPath, { recursive: true })
+  try { fs.mkdirSync(folderPath, { recursive: true }) }
+  catch (e) { throw new Error(`create-folder failed: ${String(e)}`) }
 })
 
 ipcMain.handle('move-file', (_event, srcPath: string, dstPath: string) => {
-  fs.renameSync(srcPath, dstPath)
+  try { fs.renameSync(srcPath, dstPath) }
+  catch (e) { throw new Error(`move-file failed: ${String(e)}`) }
 
   // Migrate colors for moved file/folder
   const colors = (store.get('fileColors') ?? {}) as Record<string, string>
@@ -453,7 +501,8 @@ ipcMain.handle('set-file-color', (_event, filePath: string, color: string | null
 })
 
 ipcMain.handle('rename-file', (_event, oldPath: string, newPath: string) => {
-  fs.renameSync(oldPath, newPath)
+  try { fs.renameSync(oldPath, newPath) }
+  catch (e) { throw new Error(`rename-file failed: ${String(e)}`) }
 
   // Migrate colors: remap any stored key that is oldPath or starts with oldPath + sep
   const colors = (store.get('fileColors') ?? {}) as Record<string, string>
@@ -475,12 +524,18 @@ ipcMain.handle('rename-file', (_event, oldPath: string, newPath: string) => {
 })
 
 ipcMain.handle('delete-file', (_event, filePath: string) => {
-  const stat = fs.statSync(filePath)
-  if (stat.isDirectory()) {
-    fs.rmSync(filePath, { recursive: true, force: true })
-  } else {
-    fs.unlinkSync(filePath)
+  const workspace = store.get('lastFolder') as string | undefined
+  if (workspace && !isUnderBase(filePath, workspace)) {
+    throw new Error('delete-file: path is outside the current workspace')
   }
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.isDirectory()) {
+      fs.rmSync(filePath, { recursive: true, force: true })
+    } else {
+      fs.unlinkSync(filePath)
+    }
+  } catch (e) { throw new Error(`delete-file failed: ${String(e)}`) }
 })
 
 ipcMain.handle('show-in-folder', (_event, filePath: string) => {
@@ -488,6 +543,66 @@ ipcMain.handle('show-in-folder', (_event, filePath: string) => {
 })
 
 // ─── Execution ────────────────────────────────────────────────────────────────
+
+// Plain 'bash' on PATH is unreliable on Windows: many machines have a WSL
+// launcher stub at %LOCALAPPDATA%\Microsoft\WindowsApps\bash.exe that some
+// PATH-resolution APIs prefer over Git for Windows' real bash.exe. The WSL
+// stub fails immediately if no distro is configured, and even when one is,
+// it can't see Windows temp-file paths without /mnt/c/ translation. Instead,
+// derive Git Bash's real location from wherever git.exe itself resolves —
+// git is already a hard requirement for Fern's git panel, so this doesn't
+// add a new dependency, and it works on any machine regardless of exactly
+// where Git for Windows was installed.
+let cachedWindowsBash: string | null = null
+function findWindowsBash(): string {
+  if (cachedWindowsBash) return cachedWindowsBash
+
+  try {
+    // `where` can print multiple matches (Git for Windows commonly
+    // registers both <GitRoot>\cmd\git.exe and <GitRoot>\mingw64\bin\git.exe
+    // on PATH) — those two are at different depths below GitRoot, so rather
+    // than assume a fixed number of ".." hops from any one of them, walk up
+    // a few levels from *every* match and test each level.
+    const gitPaths = execSync('where git', { encoding: 'utf8' })
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+
+    for (const gitPath of gitPaths) {
+      let dir = path.dirname(gitPath)
+      for (let i = 0; i < 3; i++) {
+        dir = path.dirname(dir)
+        const candidates = [
+          path.join(dir, 'bin', 'bash.exe'),
+          path.join(dir, 'usr', 'bin', 'bash.exe'),
+        ]
+        for (const candidate of candidates) {
+          if (fs.existsSync(candidate)) {
+            cachedWindowsBash = candidate
+            return candidate
+          }
+        }
+      }
+    }
+  } catch {
+    // git not on PATH, or `where` failed — fall through to fixed locations
+  }
+
+  const fixedCandidates = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  ]
+  for (const candidate of fixedCandidates) {
+    if (fs.existsSync(candidate)) {
+      cachedWindowsBash = candidate
+      return candidate
+    }
+  }
+
+  // Last resort: bare PATH lookup, which may hit the WSL stub.
+  cachedWindowsBash = 'bash'
+  return cachedWindowsBash
+}
 
 function getRuntimeArgs(
   runtime: string,
@@ -498,18 +613,28 @@ function getRuntimeArgs(
   switch (runtime.toLowerCase()) {
     case 'bash':
     case 'sh': {
-      if (isWin) {
-        const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.ps1`)
-        fs.writeFileSync(tmpFile, code, 'utf8')
-        return { cmd: 'powershell', args: ['-NonInteractive', '-File', tmpFile], tmpFile }
-      }
-      return { cmd: '/bin/bash', args: ['-c', code], tmpFile: null }
+      // Always run bash/sh through a real bash interpreter, even on Windows
+      // (Git for Windows ships bash.exe on PATH). Silently substituting
+      // PowerShell here breaks bash-specific syntax (export, $(), grep,
+      // C-style for loops) and PowerShell's default error handling doesn't
+      // propagate a non-zero exit code for failed commands, which used to
+      // make Run All treat real failures as success.
+      const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.sh`)
+      fs.writeFileSync(tmpFile, code, 'utf8')
+      const cmd = isWin ? findWindowsBash() : '/bin/bash'
+      return { cmd, args: [tmpFile], tmpFile }
     }
     case 'powershell':
     case 'pwsh': {
       const cmd = isWin ? 'powershell' : 'pwsh'
       const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.ps1`)
-      fs.writeFileSync(tmpFile, code, 'utf8')
+      // $ErrorActionPreference = Stop turns a failed/unrecognized command
+      // into a terminating error, and the explicit catch/exit ensures
+      // powershell.exe itself returns a non-zero exit code — without this,
+      // PowerShell logs errors to stderr but still exits 0, so Run All
+      // (and the block's own success/error status) silently ignores them.
+      const wrapped = `$ErrorActionPreference = 'Stop'\ntry {\n${code}\n} catch {\n  Write-Error $_\n  exit 1\n}\n`
+      fs.writeFileSync(tmpFile, wrapped, 'utf8')
       return { cmd, args: ['-NonInteractive', '-File', tmpFile], tmpFile }
     }
     case 'javascript':
@@ -523,7 +648,20 @@ function getRuntimeArgs(
     case 'ts': {
       const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.ts`)
       fs.writeFileSync(tmpFile, code, 'utf8')
-      return { cmd: 'npx', args: ['--yes', 'ts-node', '--skip-project', tmpFile], tmpFile }
+      // Previously this shelled out to `npx --yes ts-node`, which is a
+      // .cmd shim on Windows — spawning it with shell:false throws
+      // `spawn EINVAL` immediately (not even ENOENT), synchronously, before
+      // any process event listener is attached. That crashed the whole
+      // run-block IPC call, which the renderer wasn't catching, so the
+      // block's UI just froze on "running" forever with no visible error.
+      // Modern Node (22.6+, stable by 24) can run .ts files directly with
+      // no extra package and no shell involved at all — it strips type
+      // annotations rather than fully type-checking, which is exactly
+      // what ts-node --skip-project was already doing anyway. It doesn't
+      // support a few TS-only runtime features (constructor parameter
+      // properties, enums, namespaces) — worth documenting as a known
+      // limitation rather than reintroducing npx's fragility to cover them.
+      return { cmd: 'node', args: [tmpFile], tmpFile }
     }
     case 'python':
     case 'python3': {
@@ -561,21 +699,23 @@ function getRuntimeArgs(
     case 'rust':
     case 'rs': {
       const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.rs`)
-      const outFile = path.join(os.tmpdir(), `fern-${Date.now()}`)
+      const outFile = path.join(os.tmpdir(), `fern-${Date.now()}${isWin ? '.exe' : '_bin'}`)
       fs.writeFileSync(tmpFile, code, 'utf8')
+      // Quote both paths so usernames/dirs with spaces don't break the shell command.
       const cmd = isWin ? 'cmd' : '/bin/bash'
       const args = isWin
-        ? ['/c', `rustc ${tmpFile} -o ${outFile} && ${outFile}`]
-        : ['-c', `rustc ${tmpFile} -o ${outFile} && ${outFile}`]
+        ? ['/c', `rustc "${tmpFile}" -o "${outFile}" && "${outFile}"`]
+        : ['-c', `rustc "${tmpFile}" -o "${outFile}" && "${outFile}"; rm -f "${outFile}"`]
       return { cmd, args, tmpFile }
     }
     default: {
-      if (isWin) {
-        const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.ps1`)
-        fs.writeFileSync(tmpFile, code, 'utf8')
-        return { cmd: 'powershell', args: ['-NonInteractive', '-File', tmpFile], tmpFile }
-      }
-      return { cmd: '/bin/bash', args: ['-c', code], tmpFile: null }
+      // Unrecognized language tag — fall back to real bash (same as the
+      // explicit bash/sh case above) rather than silently substituting
+      // PowerShell, which doesn't understand bash syntax.
+      const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.sh`)
+      fs.writeFileSync(tmpFile, code, 'utf8')
+      const cmd = isWin ? findWindowsBash() : '/bin/bash'
+      return { cmd, args: [tmpFile], tmpFile }
     }
   }
 }
@@ -633,31 +773,84 @@ ipcMain.handle(
         })
       })
 
-      child.on('error', (err) => {
-        mainWindow?.webContents.send('block-output', {
-          blockId,
-          pid,
-          chunk: `Error starting process: ${err.message}\n`,
-          stream: 'stderr',
-        })
-        if (child.pid) runningProcesses.delete(child.pid)
-        if (tmpFile) { try { fs.unlinkSync(tmpFile) } catch {} }
-        resolve({ exitCode: 1, duration: Date.now() - start, pid })
-      })
+      let settled = false
+      let closeTimeout: NodeJS.Timeout | null = null
 
-      child.on('close', (exitCode) => {
+      function settle(exitCode: number | null) {
+        if (settled) return
+        settled = true
+        if (closeTimeout) clearTimeout(closeTimeout)
+        clearTimeout(hardTimeout)
         if (child.pid) runningProcesses.delete(child.pid)
         if (tmpFile) { try { fs.unlinkSync(tmpFile) } catch {} }
         resolve({ exitCode, duration: Date.now() - start, pid })
+      }
+
+      // Absolute safety net: whatever the reason (a genuinely long-running
+      // network call, a runtime waiting on stdin it'll never get, an
+      // infinite loop in the code itself), a single stuck block must never
+      // be able to freeze the rest of Run All forever. 90s comfortably
+      // covers everything in this showcase (including a first-time
+      // `npx ts-node` fetch) while still guaranteeing forward progress.
+      const hardTimeout = setTimeout(() => {
+        if (settled) return
+        mainWindow?.webContents.send('block-output', {
+          blockId,
+          pid,
+          chunk: '\nTimed out after 90s — the process was still running and has been stopped.\n',
+          stream: 'stderr',
+        })
+        killProcessTree(child.pid)
+        settle(1)
+      }, 90_000)
+
+      child.on('error', (err: NodeJS.ErrnoException) => {
+        const hint = err.code === 'ENOENT'
+          ? (INSTALL_HINTS[cmd] ?? `"${cmd}" is not installed or not in PATH`)
+          : `Error starting process: ${err.message}`
+        mainWindow?.webContents.send('block-output', {
+          blockId,
+          pid,
+          chunk: `${hint}\n`,
+          stream: 'stderr',
+        })
+        settle(1)
+      })
+
+      // 'close' fires once stdio is fully flushed, so it's the preferred
+      // signal — but some shells (Git Bash/MSYS2 on Windows in particular)
+      // can leave a subprocess holding the stdout/stderr pipes open even
+      // after the main process has already exited, so 'close' never fires
+      // and the block hangs forever, freezing the rest of Run All behind
+      // it. 'exit' fires as soon as the process itself terminates; give
+      // 'close' a brief grace period after that to capture any trailing
+      // output, then resolve anyway using the exit code we already have.
+      child.on('exit', (exitCode) => {
+        closeTimeout = setTimeout(() => settle(exitCode), 1500)
+      })
+
+      child.on('close', (exitCode) => {
+        settle(exitCode)
       })
     })
   }
 )
 
+// Kill the process and all its children (shell wrappers don't propagate SIGTERM).
+function killProcessTree(pid: number | undefined) {
+  if (!pid) return
+  if (process.platform === 'win32') {
+    try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' }) } catch {}
+  } else {
+    // Send to the entire process group if we can; fall back to direct kill.
+    try { process.kill(-pid, 'SIGTERM') } catch { try { process.kill(pid, 'SIGTERM') } catch {} }
+  }
+}
+
 ipcMain.handle('stop-block', (_event, pid: number) => {
   const child = runningProcesses.get(pid)
   if (child) {
-    child.kill('SIGTERM')
+    killProcessTree(child.pid)
     runningProcesses.delete(pid)
   }
 })
@@ -681,7 +874,10 @@ ipcMain.handle('git-status', async (_event, cwd: string) => {
     const git = simpleGit(cwd)
     const isRepo = await git.checkIsRepo()
     if (!isRepo) return { isRepo: false, files: [], branch: null, ahead: 0, behind: 0 }
-    const status = await git.status()
+    const [status, gitRoot] = await Promise.all([
+      git.status(),
+      git.revparse(['--show-toplevel']).catch(() => cwd),
+    ])
     const files = status.files.map((f) => ({
       path: f.path,
       index: f.index,
@@ -693,7 +889,7 @@ ipcMain.handle('git-status', async (_event, cwd: string) => {
       ahead = status.ahead
       behind = status.behind
     } catch {}
-    return { isRepo: true, files, branch: status.current, ahead, behind }
+    return { isRepo: true, files, branch: status.current, ahead, behind, gitRoot: gitRoot.trim() }
   } catch (e) {
     return { isRepo: false, files: [], branch: null, ahead: 0, behind: 0, error: String(e) }
   }
@@ -789,26 +985,34 @@ ipcMain.handle('git-has-upstream', async (_event, cwd: string) => {
 })
 
 ipcMain.handle('git-log', async (_event, cwd: string) => {
-  if (!cwd) return []
+  if (!cwd) return { success: false, error: 'No workspace path', commits: [] }
   try {
     const git = simpleGit(cwd)
     const log = await git.log({ maxCount: 50 })
-    return log.all.map((c) => ({
-      hash: c.hash,
-      shortHash: c.hash.slice(0, 7),
-      message: c.message,
-      author: c.author_name,
-      date: c.date,
-    }))
-  } catch { return [] }
+    return {
+      success: true,
+      commits: log.all.map((c) => ({
+        hash: c.hash,
+        shortHash: c.hash.slice(0, 7),
+        message: c.message,
+        author: c.author_name,
+        date: c.date,
+      })),
+    }
+  } catch (e) {
+    return { success: false, error: String(e), commits: [] }
+  }
 })
 
 ipcMain.handle('git-show', async (_event, cwd: string, hash: string) => {
-  if (!cwd || !hash) return ''
+  if (!cwd || !hash) return { success: false, error: 'Missing args', diff: '' }
   try {
     const git = simpleGit(cwd)
-    return await git.show([hash])
-  } catch { return '' }
+    const diff = await git.show([hash])
+    return { success: true, diff }
+  } catch (e) {
+    return { success: false, error: String(e), diff: '' }
+  }
 })
 
 ipcMain.handle('copy-file', async (_event, src: string, dest: string) => {
@@ -820,7 +1024,11 @@ ipcMain.handle('copy-file', async (_event, src: string, dest: string) => {
 
 ipcMain.handle('read-workspace-file', (_event, workspacePath: string, relPath: string) => {
   try {
-    const fullPath = path.join(workspacePath, relPath.trim())
+    const fullPath = path.resolve(workspacePath, relPath.trim())
+    // Reject path traversal attempts
+    if (!isUnderBase(fullPath, workspacePath)) {
+      return { success: false, error: 'Access denied: path is outside the workspace' }
+    }
     if (!fs.existsSync(fullPath)) return { success: false, error: `File not found: ${relPath}` }
     const content = fs.readFileSync(fullPath, 'utf8')
     const lines = content.split('\n').length
@@ -832,10 +1040,34 @@ ipcMain.handle('read-workspace-file', (_event, workspacePath: string, relPath: s
 
 // ─── API Embeds ──────────────────────────────────────────────────────────────
 
-// In-memory cache: url -> { data, ts, status }
+// In-memory cache: url -> { data, ts, status } — capped to avoid unbounded growth
+const API_EMBED_CACHE_MAX = 100
 const apiEmbedCache = new Map<string, { data: unknown; ts: number; status: number }>()
 
+// Block private/loopback addresses from api-embed-fetch to prevent SSRF.
+function isPrivateUrl(urlStr: string): boolean {
+  try {
+    const u = new URL(urlStr)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return true
+    const h = u.hostname.toLowerCase()
+    return (
+      h === 'localhost' ||
+      h.startsWith('127.') ||
+      h.startsWith('10.') ||
+      h.startsWith('192.168.') ||
+      h.startsWith('172.') ||
+      h === '::1' ||
+      h === '0.0.0.0' ||
+      h.endsWith('.local') ||
+      h === '169.254.169.254' // cloud metadata
+    )
+  } catch { return true }
+}
+
 ipcMain.handle('api-embed-fetch', async (_event, method: string, url: string, cacheDuration: number) => {
+  if (isPrivateUrl(url)) {
+    return { success: false, error: 'Requests to private/internal addresses are not allowed' }
+  }
   const now = Date.now()
   const cached = apiEmbedCache.get(url)
   if (cached && cacheDuration > 0 && (now - cached.ts) < cacheDuration * 1000) {
@@ -853,6 +1085,10 @@ ipcMain.handle('api-embed-fetch', async (_event, method: string, url: string, ca
       data = await res.json()
     } else {
       data = await res.text()
+    }
+    if (apiEmbedCache.size >= API_EMBED_CACHE_MAX) {
+      // Evict oldest entry
+      apiEmbedCache.delete(apiEmbedCache.keys().next().value!)
     }
     apiEmbedCache.set(url, { data, ts: now, status: res.status })
     return { success: true, data, status: res.status, fromCache: false }
@@ -908,7 +1144,8 @@ function parseGitHubOwnerRepo(remoteUrl: string): { owner: string; repo: string 
   return null
 }
 
-// Cache for github issues: key -> { data, ts }
+// Cache for github issues: key -> { data, ts } — capped to avoid unbounded growth
+const ISSUES_CACHE_MAX = 50
 const issuesCache = new Map<string, { data: unknown[]; ts: number }>()
 
 ipcMain.handle('github-list-issues', async (_event, cwd: string, filter: string, cacheDuration: number) => {
@@ -965,6 +1202,9 @@ ipcMain.handle('github-list-issues', async (_event, cwd: string, filter: string,
       state: i.state,
     }))
 
+    if (issuesCache.size >= ISSUES_CACHE_MAX) {
+      issuesCache.delete(issuesCache.keys().next().value!)
+    }
     issuesCache.set(cacheKey, { data: issues, ts: now })
     return { success: true, issues, fromCache: false, ...ownerRepo }
   } catch (e) {
@@ -1178,7 +1418,12 @@ ipcMain.handle('terminal-close', () => {
   ptyProcess = null
 })
 
-// Open external URL in default browser
+// Open external URL in default browser — only allow http/https to prevent
+// file:, ms-msdt:, smb:, and other dangerous protocol-handler exploits.
 ipcMain.handle('open-external', (_event, url: string) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+    log.warn('[open-external] blocked non-http URL:', url)
+    return
+  }
   shell.openExternal(url)
 })

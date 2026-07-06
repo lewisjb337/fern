@@ -138,9 +138,11 @@ export default function App() {
     }
   }, [distractionFree])
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   function showToast(msg: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(msg)
-    setTimeout(() => setToast(null), 2000)
+    toastTimer.current = setTimeout(() => setToast(null), 2000)
   }
 
   // Startup
@@ -222,6 +224,7 @@ export default function App() {
           setContent('')
           setActiveTabPath(null)
           resetBlocks([])
+          setIsRunningAll(false)
         }
       }
       setOpenTabs((prev) => prev.filter((t) => !affectedSet.has(t.path)))
@@ -296,10 +299,17 @@ export default function App() {
 
   const openFile = useCallback(async (filePath: string) => {
     await flushAutosave()
-    const text = await readFile(filePath)
+    let text: string
+    try {
+      text = await readFile(filePath)
+    } catch (e) {
+      showToast(`Could not open file: ${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
     setActiveFile(filePath)
     setContent(text)
     resetBlocks([])
+    setIsRunningAll(false)
     setActivePage('editor')
     setActiveTabPath(filePath)
     setExternalChanges((prev) => { const n = new Set(prev); n.delete(filePath); return n })
@@ -310,12 +320,17 @@ export default function App() {
     })
   }, [flushAutosave, readFile, resetBlocks])
 
-  const closeFile = useCallback(async () => {
+  const closeFile = useCallback(async (filePath?: string) => {
     await flushAutosave()
     setActiveFile(null)
     setContent('')
     resetBlocks([])
+    setIsRunningAll(false)
     setActiveTabPath(null)
+    if (filePath) {
+      setOpenTabs((prev) => prev.filter((t) => t.path !== filePath))
+      setExternalChanges((prev) => { const n = new Set(prev); n.delete(filePath); return n })
+    }
   }, [flushAutosave, resetBlocks])
 
   // Close a single tab; activate a neighbouring tab if the active one closed
@@ -337,6 +352,7 @@ export default function App() {
           setContent('')
           setActiveTabPath(null)
           resetBlocks([])
+          setIsRunningAll(false)
         }
       }
       return next
@@ -436,7 +452,12 @@ export default function App() {
     const sep = srcPath.includes('\\') ? '\\' : '/'
     const fileName = srcPath.split(/[\\/]/).pop() ?? ''
     const dstPath = `${dstFolderPath.replace(/[\\/]+$/, '')}${sep}${fileName}`
-    await moveFile(srcPath, dstFolderPath)
+    try {
+      await moveFile(srcPath, dstFolderPath)
+    } catch (e) {
+      showToast(`Move failed: ${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
     setOpenTabs((prev) => prev.map((t) => (t.path === srcPath ? { ...t, path: dstPath } : t)))
     setActiveTabPath((p) => (p === srcPath ? dstPath : p))
     if (activeFile === srcPath) setActiveFile(dstPath)
@@ -444,7 +465,11 @@ export default function App() {
 
   const handleDeleteFile = useCallback(async (filePath: string) => {
     await closeTab(filePath)
-    await deleteFile(filePath)
+    try {
+      await deleteFile(filePath)
+    } catch (e) {
+      showToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }, [closeTab, deleteFile])
 
   const handleTogglePin = useCallback(async (filePath: string) => {
@@ -610,6 +635,7 @@ export default function App() {
           onViewModeChange={setViewMode}
           onRunAll={handleRunAll}
           isRunningAll={isRunningAll}
+          isRunAllPaused={runAllPausedAt != null}
           hasFile={!!activeFile}
           fileName={fileName}
           activePage={activePage}
@@ -755,6 +781,10 @@ export default function App() {
                   onPin={pinOutput}
                   onUnpin={unpinOutput}
                   embedCacheDuration={settings.embedCacheDuration ?? 30}
+                  blockStates={blockStates}
+                  runBlock={runBlock}
+                  stopBlock={stopBlock}
+                  clearBlock={clearBlock}
                 />
               )}
 

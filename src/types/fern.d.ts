@@ -61,6 +61,7 @@ export interface GitStatus {
   branch: string | null
   ahead: number
   behind: number
+  gitRoot?: string
   error?: string
 }
 
@@ -139,8 +140,8 @@ export interface FernAPI {
   gitDiffFile: (cwd: string, filePath: string) => Promise<{ success: boolean; hunks?: DiffHunk[]; headContent?: string; currentContent?: string; error?: string }>
   gitGetRemotes: (cwd: string) => Promise<Array<{ name: string; refs: { fetch: string; push: string } }>>
   gitHasUpstream: (cwd: string) => Promise<{ hasUpstream: boolean }>
-  gitLog: (cwd: string) => Promise<GitCommit[]>
-  gitShow: (cwd: string, hash: string) => Promise<string>
+  gitLog: (cwd: string) => Promise<{ success: boolean; commits: GitCommit[]; error?: string }>
+  gitShow: (cwd: string, hash: string) => Promise<{ success: boolean; diff: string; error?: string }>
   copyFile: (src: string, dest: string) => Promise<void>
   // File embeds
   readWorkspaceFile: (workspacePath: string, relPath: string) => Promise<{ success: boolean; content?: string; lines?: number; ext?: string; error?: string }>

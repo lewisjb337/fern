@@ -21,8 +21,15 @@ export function useExecutor(folderPath: string | null) {
   const [runAllPausedAt, setRunAllPausedAt] = useState<string | null>(null)
   const pauseResolverRef = useRef<((action: 'continue' | 'stop') => void) | null>(null)
 
+  // Pids currently known to be running, tracked outside blockStates so we
+  // can still kill orphaned processes after a reset wipes the state that
+  // would otherwise be the only place their pid was recorded.
+  const activePids = useRef<Set<number>>(new Set())
+
   useEffect(() => {
     const removeListener = window.fern.onOutput(({ blockId, pid, chunk, stream }) => {
+      if (pid > 0) activePids.current.add(pid)
+
       // Accumulate stdout for named block env vars
       if (stream === 'stdout') {
         blockStdout.current[blockId] = (blockStdout.current[blockId] ?? '') + chunk
@@ -66,19 +73,47 @@ export function useExecutor(folderPath: string | null) {
         },
       }))
 
-      const result = await window.fern.runBlock(
-        blockId,
-        code,
-        runtime,
-        folderPath,
-        sessionEnv.current
-      )
+      let result: { exitCode: number | null; duration: number; pid: number }
+      try {
+        result = await window.fern.runBlock(
+          blockId,
+          code,
+          runtime,
+          folderPath,
+          sessionEnv.current
+        )
+      } catch (err) {
+        // ipcRenderer.invoke rejects (rather than resolving with a
+        // failure result) when something goes wrong before the main
+        // process's run-block handler even gets to attach process event
+        // listeners — e.g. child_process.spawn throwing synchronously.
+        // Without this catch, that rejection propagates out of this
+        // function and every line below (including the setBlockStates
+        // call that would mark the block as errored) never runs, leaving
+        // the block frozen on "running"/Stop forever with no visible
+        // explanation — exactly the class of bug that motivated this.
+        const message = err instanceof Error ? err.message : String(err)
+        setBlockStates((prev) => ({
+          ...prev,
+          [blockId]: {
+            ...prev[blockId],
+            status: 'error',
+            output: [...(prev[blockId]?.output ?? []), { text: `${message}\n`, stream: 'stderr' }],
+            exitCode: 1,
+            duration: 0,
+            pid: null,
+          },
+        }))
+        return { exitCode: 1 }
+      }
 
       // After completion, store stdout as FERN_OUT_<namedId> if block has a named id
       if (namedId) {
         const stdout = blockStdout.current[blockId] ?? ''
         sessionEnv.current[`FERN_OUT_${namedId}`] = stdout.trim()
       }
+
+      if (result.pid) activePids.current.delete(result.pid)
 
       setBlockStates((prev) => ({
         ...prev,
@@ -131,14 +166,32 @@ export function useExecutor(folderPath: string | null) {
     [runBlock]
   )
 
-  const resetBlocks = useCallback((blockIds: string[]) => {
-    setBlockStates((prev) => {
-      const next = { ...prev }
-      for (const id of blockIds) delete next[id]
-      return next
-    })
+  // Called whenever the active file changes (open/close/switch tabs). Every
+  // call site historically passed [] here, which — since this only ever
+  // deleted explicitly-listed ids — meant it never actually cleared
+  // anything. Block ids are `block-<charOffset>-<runtime>`, not scoped to
+  // a file, so leftover state (including a mid-flight or paused Run All)
+  // could silently carry over into whatever the next file happened to
+  // render at the same fence position. This now does a real full reset:
+  // clears every block's state, cancels any in-flight Run All pause so
+  // that suspended loop unblocks and exits, and wipes the session env.
+  const resetBlocks = useCallback((_blockIds?: string[]) => {
+    // Kill anything still running for the file we're leaving — otherwise
+    // it keeps executing in the background and its late-arriving output/
+    // completion event updates state for a block the user can no longer see.
+    for (const pid of activePids.current) {
+      window.fern.stopBlock(pid)
+    }
+    activePids.current.clear()
+
+    setBlockStates({})
     sessionEnv.current = {}
     blockStdout.current = {}
+    if (pauseResolverRef.current) {
+      pauseResolverRef.current('stop')
+      pauseResolverRef.current = null
+    }
+    setRunAllPausedAt(null)
   }, [])
 
   const getBlockState = useCallback(

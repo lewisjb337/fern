@@ -88,9 +88,18 @@ export function GitPanel({ workspacePath, onOpenFile, onClose, onOpenDiff, pageM
   const loadHistory = useCallback(async () => {
     if (!workspacePath) return
     setCommitsLoading(true)
-    const log = await window.fern.gitLog(workspacePath)
-    setCommits(log)
-    setCommitsLoading(false)
+    try {
+      const result = await window.fern.gitLog(workspacePath)
+      if (result.success) {
+        setCommits(result.commits)
+      } else {
+        setError(result.error ?? 'Failed to load history')
+      }
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setCommitsLoading(false)
+    }
   }, [workspacePath])
 
   useEffect(() => {
@@ -102,9 +111,18 @@ export function GitPanel({ workspacePath, onOpenFile, onClose, onOpenDiff, pageM
     setSelectedCommit(commit)
     setCommitDiffLoading(true)
     setCommitDiff(null)
-    const raw = await window.fern.gitShow(workspacePath, commit.hash)
-    setCommitDiff(raw)
-    setCommitDiffLoading(false)
+    try {
+      const result = await window.fern.gitShow(workspacePath, commit.hash)
+      if (result.success) {
+        setCommitDiff(result.diff)
+      } else {
+        setError(result.error ?? 'Failed to load commit diff')
+      }
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setCommitDiffLoading(false)
+    }
   }
 
   const refresh = useCallback(async () => {
@@ -183,7 +201,8 @@ export function GitPanel({ workspacePath, onOpenFile, onClose, onOpenDiff, pageM
 
   const handleFileClick = async (file: GitFile) => {
     if (!workspacePath) return
-    const fullPath = workspacePath.replace(/[\\/]+$/, '') + '/' + file.path.replace(/\\/g, '/')
+    const base = (status?.gitRoot ?? workspacePath).replace(/[\\/]+$/, '')
+    const fullPath = base + '/' + file.path.replace(/\\/g, '/')
     if (pageMode) {
       setDiffFile(file.path)
       setDiffHunks(null)

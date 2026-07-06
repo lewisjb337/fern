@@ -11,6 +11,7 @@ interface TopBarProps {
   onViewModeChange: (mode: ViewMode) => void
   onRunAll: () => void
   isRunningAll: boolean
+  isRunAllPaused?: boolean
   hasFile: boolean
   fileName?: string | null
   activePage: AppPage
@@ -21,6 +22,7 @@ export function TopBar({
   onViewModeChange,
   onRunAll,
   isRunningAll,
+  isRunAllPaused,
   hasFile,
   fileName,
   activePage,
@@ -68,11 +70,12 @@ export function TopBar({
               ))}
             </div>
             <button
-              className={`topbar-run-all ${isRunningAll ? 'running' : ''}`}
+              className={`topbar-run-all ${isRunAllPaused ? 'paused' : isRunningAll ? 'running' : ''}`}
               onClick={onRunAll}
               disabled={isRunningAll}
+              title={isRunAllPaused ? 'A block failed — choose Continue or Stop in its output panel below' : undefined}
             >
-              {isRunningAll ? 'Running…' : '▶ Run all'}
+              {isRunAllPaused ? 'Awaiting decision' : isRunningAll ? 'Running…' : '▶ Run all'}
             </button>
           </>
         )}
@@ -265,6 +268,15 @@ export function TopBar({
         .topbar-run-all:hover:not(:disabled) { background: var(--accent-hover); }
         .topbar-run-all:disabled { opacity: 0.35; cursor: default; }
         .topbar-run-all.running { background: var(--accent-hover); opacity: 0.7; }
+        .topbar-run-all.paused {
+          background: var(--color-amber);
+          opacity: 1;
+          animation: topbar-run-all-pulse 1.6s ease-in-out infinite;
+        }
+        @keyframes topbar-run-all-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0.4); }
+          50% { box-shadow: 0 0 0 5px rgba(217,119,6,0); }
+        }
 
         /* Windows window control buttons */
         .topbar-wincontrols {
