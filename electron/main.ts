@@ -614,11 +614,9 @@ function getRuntimeArgs(
     case 'bash':
     case 'sh': {
       // Always run bash/sh through a real bash interpreter, even on Windows
-      // (Git for Windows ships bash.exe on PATH). Silently substituting
-      // PowerShell here breaks bash-specific syntax (export, $(), grep,
-      // C-style for loops) and PowerShell's default error handling doesn't
-      // propagate a non-zero exit code for failed commands, which used to
-      // make Run All treat real failures as success.
+      // (Git for Windows ships bash.exe on PATH). PowerShell doesn't support
+      // bash-specific syntax (export, $(), grep, C-style for loops) and its
+      // default error handling doesn't propagate non-zero exit codes.
       const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.sh`)
       fs.writeFileSync(tmpFile, code, 'utf8')
       const cmd = isWin ? findWindowsBash() : '/bin/bash'
@@ -648,19 +646,10 @@ function getRuntimeArgs(
     case 'ts': {
       const tmpFile = path.join(os.tmpdir(), `fern-${Date.now()}.ts`)
       fs.writeFileSync(tmpFile, code, 'utf8')
-      // Previously this shelled out to `npx --yes ts-node`, which is a
-      // .cmd shim on Windows — spawning it with shell:false throws
-      // `spawn EINVAL` immediately (not even ENOENT), synchronously, before
-      // any process event listener is attached. That crashed the whole
-      // run-block IPC call, which the renderer wasn't catching, so the
-      // block's UI just froze on "running" forever with no visible error.
-      // Modern Node (22.6+, stable by 24) can run .ts files directly with
-      // no extra package and no shell involved at all — it strips type
-      // annotations rather than fully type-checking, which is exactly
-      // what ts-node --skip-project was already doing anyway. It doesn't
-      // support a few TS-only runtime features (constructor parameter
-      // properties, enums, namespaces) — worth documenting as a known
-      // limitation rather than reintroducing npx's fragility to cover them.
+      // Node 22.6+ (stable by 24) runs .ts files directly, stripping type
+      // annotations rather than fully type-checking. No package, no shell.
+      // Known limitation: doesn't support constructor parameter properties,
+      // enums, or namespaces.
       return { cmd: 'node', args: [tmpFile], tmpFile }
     }
     case 'python':

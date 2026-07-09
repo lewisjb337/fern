@@ -83,15 +83,11 @@ export function useExecutor(folderPath: string | null) {
           sessionEnv.current
         )
       } catch (err) {
-        // ipcRenderer.invoke rejects (rather than resolving with a
-        // failure result) when something goes wrong before the main
-        // process's run-block handler even gets to attach process event
-        // listeners — e.g. child_process.spawn throwing synchronously.
-        // Without this catch, that rejection propagates out of this
-        // function and every line below (including the setBlockStates
-        // call that would mark the block as errored) never runs, leaving
-        // the block frozen on "running"/Stop forever with no visible
-        // explanation — exactly the class of bug that motivated this.
+        // ipcRenderer.invoke rejects instead of resolving with a failure
+        // result if something throws before the main process attaches
+        // process event listeners (e.g. child_process.spawn throwing
+        // synchronously). Without this catch the block stays stuck on
+        // "running" with no error shown.
         const message = err instanceof Error ? err.message : String(err)
         setBlockStates((prev) => ({
           ...prev,
@@ -166,19 +162,15 @@ export function useExecutor(folderPath: string | null) {
     [runBlock]
   )
 
-  // Called whenever the active file changes (open/close/switch tabs). Every
-  // call site historically passed [] here, which — since this only ever
-  // deleted explicitly-listed ids — meant it never actually cleared
-  // anything. Block ids are `block-<charOffset>-<runtime>`, not scoped to
-  // a file, so leftover state (including a mid-flight or paused Run All)
-  // could silently carry over into whatever the next file happened to
-  // render at the same fence position. This now does a real full reset:
-  // clears every block's state, cancels any in-flight Run All pause so
-  // that suspended loop unblocks and exits, and wipes the session env.
+  // Called whenever the active file changes (open/close/switch tabs). Clears
+  // every block's state, cancels any in-flight Run All pause, and wipes the
+  // session env. Block ids are `block-<charOffset>-<runtime>`, not scoped to
+  // a file, so a full reset avoids state from one file leaking into another
+  // at the same fence position.
   const resetBlocks = useCallback((_blockIds?: string[]) => {
-    // Kill anything still running for the file we're leaving — otherwise
-    // it keeps executing in the background and its late-arriving output/
-    // completion event updates state for a block the user can no longer see.
+    // Kill anything still running for the file we're leaving, otherwise it
+    // keeps executing in the background and updates state for a block the
+    // user can no longer see.
     for (const pid of activePids.current) {
       window.fern.stopBlock(pid)
     }

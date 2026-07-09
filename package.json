@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "The end of README rot.",
   "main": "dist-electron/main.js",
+  "license": "MIT",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:renderer": "vite",
