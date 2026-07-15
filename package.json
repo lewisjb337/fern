@@ -1,6 +1,6 @@
 {
   "name": "fern",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The end of README rot.",
   "main": "dist-electron/main.js",
   "license": "MIT",
