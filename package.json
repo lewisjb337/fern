@@ -45,7 +45,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "lewisjohnbaxter",
+      "owner": "lewisjb337",
       "repo": "fern"
     },
     "npmRebuild": false
