@@ -47,7 +47,8 @@
       "provider": "github",
       "owner": "lewisjohnbaxter",
       "repo": "fern"
-    }
+    },
+    "npmRebuild": false
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.3.1",
