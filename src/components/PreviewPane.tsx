@@ -365,7 +365,14 @@ export function PreviewPane({
   }, [folderPath])
 
   return (
-    <div className="preview-scroll" ref={scrollRef}>
+    <div className="preview-scroll" ref={scrollRef} onClick={(e) => {
+      const a = (e.target as HTMLElement).closest('a')
+      if (!a) return
+      const href = a.getAttribute('href')
+      if (!href || href.startsWith('#')) return
+      e.preventDefault()
+      if (/^https?:\/\//i.test(href)) window.fern.openExternal(href)
+    }}>
       <div className="preview-pane" ref={previewRef}>
         {frontmatterTags.length > 0 && (
           <div className="frontmatter-tags">

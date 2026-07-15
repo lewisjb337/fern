@@ -228,6 +228,16 @@ function createWindow() {
   mainWindow.on('maximize', () => mainWindow?.webContents.send('maximize-change', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('maximize-change', false))
 
+  // Prevent in-app navigation — open http(s) links in the OS default browser instead.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+  })
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
   // Spell-check context menu
   mainWindow.webContents.on('context-menu', (_event, params) => {
     const menu = new Menu()
