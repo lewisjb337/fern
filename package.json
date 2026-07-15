@@ -31,7 +31,8 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "Fern-Setup.exe"
     },
     "mac": {
       "icon": "assets/icon.png",
@@ -46,7 +47,8 @@
     "publish": {
       "provider": "github",
       "owner": "lewisjb337",
-      "repo": "fern"
+      "repo": "fern",
+      "draft": false
     },
     "npmRebuild": false
   },
