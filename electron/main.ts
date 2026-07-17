@@ -284,6 +284,34 @@ if (process.platform === 'win32') {
 }
 app.name = 'Fern'
 
+// Extract a .md file path from argv (passed when launched via "Open with Fern")
+function getArgvFile(argv: string[]): string | null {
+  const file = argv.find((a) => a.endsWith('.md') && fs.existsSync(a))
+  return file ?? null
+}
+
+function openFileInWindow(win: BrowserWindow, filePath: string) {
+  const folder = path.dirname(filePath)
+  store.set('lastFolder', folder)
+  startWatcher(folder, win)
+  win.webContents.send('open-file-arg', { folder, filePath })
+}
+
+// Single-instance lock — focus existing window and open the file if already running
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+      const file = getArgvFile(argv)
+      if (file) openFileInWindow(mainWindow, file)
+    }
+  })
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   createWindow()
@@ -293,6 +321,13 @@ app.whenReady().then(() => {
     startWatcher(lastFolder, mainWindow)
   }
   setupAutoUpdater()
+  // Open file passed via "Open with Fern" context menu
+  const argvFile = getArgvFile(process.argv)
+  if (argvFile && mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      openFileInWindow(mainWindow!, argvFile)
+    })
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

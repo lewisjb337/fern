@@ -368,9 +368,9 @@ export function PreviewPane({
     <div className="preview-scroll" ref={scrollRef} onClick={(e) => {
       const a = (e.target as HTMLElement).closest('a')
       if (!a) return
-      const href = a.getAttribute('href')
-      if (!href || href.startsWith('#')) return
       e.preventDefault()
+      const href = (a as HTMLAnchorElement).href
+      if (!href || href.startsWith('#')) return
       if (/^https?:\/\//i.test(href)) window.fern.openExternal(href)
     }}>
       <div className="preview-pane" ref={previewRef}>

@@ -143,6 +143,8 @@ export interface FernAPI {
   addEnvToGitignore: (workspacePath: string) => Promise<boolean>
   // Shell
   openExternal: (url: string) => Promise<void>
+  // Open file via context menu / argv
+  onOpenFileArg: (cb: (args: { folder: string; filePath: string }) => void) => () => void
   // File watching
   onFileChangedExternally: (cb: (path: string) => void) => () => void
   onFileAdded: (cb: (path: string) => void) => () => void
@@ -252,6 +254,12 @@ const fernAPI: FernAPI = {
   addEnvToGitignore: (workspacePath) => ipcRenderer.invoke('add-env-to-gitignore', workspacePath),
   // Shell
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  // Open file via context menu / argv
+  onOpenFileArg: (cb) => {
+    const handler = (_: Electron.IpcRendererEvent, args: { folder: string; filePath: string }) => cb(args)
+    ipcRenderer.on('open-file-arg', handler)
+    return () => ipcRenderer.removeListener('open-file-arg', handler)
+  },
   // File watching
   onFileChangedExternally: (cb) => {
     const handler = (_: Electron.IpcRendererEvent, p: string) => cb(p)

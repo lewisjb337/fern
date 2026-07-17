@@ -320,6 +320,15 @@ export default function App() {
     })
   }, [flushAutosave, readFile, resetBlocks])
 
+  // Handle "Open with Fern" context menu / double-click on .md file
+  useEffect(() => {
+    const off = window.fern.onOpenFileArg(async ({ folder, filePath }) => {
+      await loadFolder(folder)
+      await openFile(filePath)
+    })
+    return off
+  }, [loadFolder, openFile])
+
   const closeFile = useCallback(async (filePath?: string) => {
     await flushAutosave()
     setActiveFile(null)
